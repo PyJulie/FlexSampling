@@ -2,10 +2,12 @@
 by Lie Ju, Yicheng Wu, Lin Wang, Zhen Yu, Xin Zhao, Xin Wang, Paul Bonnington and Zongyuan Ge*
 
 ## Intro.
-This is an official Pytorch implementation of our paper published in MICCAI 2022 
-*[Flexible Sampling for Long-tailed Skin Lesion Classification](https://arxiv.org/abs/2204.03161)*.
+This is an official Pytorch implementation of our paper published in MICCAI 2022.
 
-The code is avaliable now! 
+*[Flexible Sampling for Long-tailed Skin Lesion Classification](https://arxiv.org/abs/2204.03161)*
+
+The code is avaliable now!
+
 We have also provided other widely-used tricks for long-tailed learning. Feel free to use them!
 
 ## Usage
