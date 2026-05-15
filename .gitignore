@@ -8,7 +8,6 @@ build/
 *.so
 .venv/
 venv/
-*.npy
 *.pth
 results/
 logs/

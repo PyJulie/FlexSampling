@@ -43,15 +43,16 @@ class ISICDataset(Dataset):
     Expected file layout (as in the original repo)::
 
         dataset_root/
-            dic.npy          # {filename: label_index}
-            train.npy        # array of filenames
-            val.npy
-            test.npy
+            dic.npy              # {filename: label_index}
+            train.npy            # array of filenames (14-class)
+            train_100.npy        # or with sample-size suffix (8-class)
+            val.npy / val_100.npy
+            test.npy / test_100.npy
 
     Args:
         root: Path to the split directory containing .npy files.
         image_dir: Path to the directory containing actual image files.
-        split: 'train', 'val', or 'test'.
+        split: Split name, used as the .npy filename stem (e.g. 'train', 'train_100').
         transform: Torchvision transform. If None, uses default.
         img_size: Image size for default transforms.
     """
@@ -76,7 +77,7 @@ class ISICDataset(Dataset):
 
         if transform is not None:
             self.transform = transform
-        elif split == "train":
+        elif split.startswith("train"):
             self.transform = default_train_transform(img_size)
         else:
             self.transform = default_val_transform(img_size)
