@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flexsampling"
+version = "0.2.0"
+description = "Flexible Sampling for Long-tailed Skin Lesion Classification"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Lie Ju"},
+]
+dependencies = [
+    "torch>=1.9",
+    "torchvision>=0.10",
+    "numpy",
+    "pillow",
+]
+
+[project.optional-dependencies]
+demo = ["timm", "pyyaml", "pandas", "scikit-learn"]
+
+[tool.setuptools.packages.find]
+include = ["flexsampling*"]
