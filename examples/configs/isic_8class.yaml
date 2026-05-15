@@ -1,9 +1,10 @@
-# Example config for ISIC 2019 8-class long-tailed classification.
+# FlexSampling config for ISIC 2019 8-class long-tailed classification.
 # Adjust paths to your local setup.
 
 data:
-  root: ./dataset/8-class        # directory with dic.npy, train.npy, etc.
+  root: ./dataset/8-class        # directory with dic.npy, train_*.npy, etc.
   image_dir: ./images/ISIC2019   # directory with actual image files
+  train_split: train_100         # split file stem (train_100, train_200, train_500)
   img_size: 224
 
 model:
@@ -11,28 +12,36 @@ model:
   pretrained: true
   num_classes: 8
 
-loss:
-  name: cb_focal         # focal | cb_focal | cb_softmax | ldam | grw
-  gamma: 1.0
-  beta: 0.9999
+# FlexSampling pipeline settings
+flexsampling:
+  anchor_scaling: 0.1        # s: controls anchor set imbalance (smaller = more balanced)
+  warmup_epochs: 30          # train on anchor set only
+  total_epochs: 100
+  patience: 10               # epochs without val improvement before querying
+  query_ratio: 0.1           # fraction of remaining pool to query each step
+  bald_mc_samples: 10        # MC dropout forward passes for uncertainty
+  lr: 3e-4
 
-sampler:
-  name: class_aware      # weighted | class_aware | null (for default)
-  num_samples_per_cls: 1
-
-augmentation:
-  mixup_alpha: 0.2       # 0 to disable
-
-training:
-  epochs: 50
-  batch_size: 64
-  lr: 0.01
-  momentum: 0.9
-  weight_decay: 1e-4
-  lr_schedule: cosine     # cosine | step
-  step_milestones: [30, 40]
-  step_gamma: 0.1
-  warmup_epochs: 5
+# Alternative: use baseline methods instead of FlexSampling pipeline
+baseline:
+  enabled: false
+  loss:
+    name: cb_focal           # focal | cb_focal | cb_softmax | ldam | grw
+    gamma: 1.0
+    beta: 0.9999
+  sampler:
+    name: class_aware        # weighted | class_aware | null
+    num_samples_per_cls: 1
+  augmentation:
+    mixup_alpha: 0.2         # 0 to disable
+  training:
+    epochs: 50
+    batch_size: 64
+    lr: 0.01
+    momentum: 0.9
+    weight_decay: 1e-4
+    lr_schedule: cosine
+    warmup_epochs: 5
 
 seed: 42
 output_dir: ./results/isic_8class
