@@ -15,8 +15,38 @@ from typing import Optional
 def _enable_dropout(model: nn.Module):
     """Enable dropout layers during inference for MC sampling."""
     for m in model.modules():
-        if isinstance(m, nn.Dropout):
+        if isinstance(m, (nn.Dropout, nn.Dropout2d)):
             m.train()
+
+
+def _inject_dropout(model: nn.Module, p: float = 0.1) -> list:
+    """Inject Dropout layers after BatchNorm+ReLU in models that lack them.
+
+    This is needed for MC Dropout in architectures like ResNet that don't
+    have built-in dropout. Adds dropout after the last ReLU in each
+    residual block.
+
+    Returns list of (parent, attr_name, original_module) for cleanup.
+    """
+    injected = []
+    for name, module in model.named_modules():
+        # Look for Sequential blocks (residual block internals)
+        if isinstance(module, nn.Sequential) and len(list(module.children())) >= 2:
+            children = list(module.named_children())
+            # Check if last child is ReLU or activation
+            last_name, last_child = children[-1]
+            if isinstance(last_child, (nn.ReLU, nn.GELU, nn.SiLU)):
+                # Insert dropout after activation
+                new_seq = nn.Sequential(last_child, nn.Dropout2d(p=p))
+                setattr(module, last_name, new_seq)
+                injected.append((module, last_name, last_child))
+    return injected
+
+
+def _remove_injected_dropout(injected: list):
+    """Remove previously injected dropout layers."""
+    for parent, attr_name, original in injected:
+        setattr(parent, attr_name, original)
 
 
 class BALDUncertainty:
@@ -25,15 +55,23 @@ class BALDUncertainty:
     Computes: I(y; omega | x) = H(y|x) - E[H(y|x, omega)]
     where H is entropy and the expectation is over MC dropout samples.
 
+    If the model has no built-in Dropout layers, temporary Dropout2d layers
+    are injected to enable stochastic forward passes.
+
     Args:
         n_samples: Number of MC forward passes.
-        dropout_rate: If provided, temporarily sets all Dropout layers to this
-            rate. If None, uses existing dropout rates.
+        dropout_rate: Dropout probability for MC sampling (default 0.1).
     """
 
-    def __init__(self, n_samples: int = 10, dropout_rate: Optional[float] = None):
+    def __init__(self, n_samples: int = 10, dropout_rate: float = 0.1):
         self.n_samples = n_samples
         self.dropout_rate = dropout_rate
+
+    def _has_dropout(self, model: nn.Module) -> bool:
+        for m in model.modules():
+            if isinstance(m, (nn.Dropout, nn.Dropout2d)):
+                return True
+        return False
 
     @torch.no_grad()
     def score(
@@ -47,7 +85,7 @@ class BALDUncertainty:
         """Compute BALD uncertainty scores for all samples.
 
         Args:
-            model: Classifier with dropout layers.
+            model: Classifier (dropout layers injected automatically if missing).
             dataset: Dataset to score.
             device: Torch device.
 
@@ -55,13 +93,20 @@ class BALDUncertainty:
             (N,) array of uncertainty scores (higher = more uncertain).
         """
         model.eval()
+
+        # Inject dropout if model doesn't have any
+        injected = []
+        if not self._has_dropout(model):
+            injected = _inject_dropout(model, p=self.dropout_rate)
+
+        # Enable dropout layers for MC sampling
         _enable_dropout(model)
 
-        # Optionally override dropout rate
+        # Override dropout rate on pre-existing layers if needed
         original_rates = {}
-        if self.dropout_rate is not None:
+        if not injected:
             for name, m in model.named_modules():
-                if isinstance(m, nn.Dropout):
+                if isinstance(m, (nn.Dropout, nn.Dropout2d)):
                     original_rates[name] = m.p
                     m.p = self.dropout_rate
 
@@ -93,11 +138,13 @@ class BALDUncertainty:
             bald = h_mean - mean_h
             all_scores.append(bald.numpy())
 
-        # Restore dropout rates
-        if self.dropout_rate is not None:
+        # Cleanup: restore original dropout rates and remove injected layers
+        if original_rates:
             for name, m in model.named_modules():
-                if isinstance(m, nn.Dropout) and name in original_rates:
+                if isinstance(m, (nn.Dropout, nn.Dropout2d)) and name in original_rates:
                     m.p = original_rates[name]
+        if injected:
+            _remove_injected_dropout(injected)
 
         model.eval()
         return np.concatenate(all_scores)

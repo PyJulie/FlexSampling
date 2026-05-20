@@ -85,8 +85,11 @@ class CurriculumSampler:
             if not pool:
                 continue
 
-            # Number to query for this class
-            n_query = max(1, int(len(pool) * self.query_ratio * probs[c] / self.num_classes))
+            # Number to query for this class.
+            # probs[c] is normalized so sum(probs) = num_classes, i.e. avg = 1.
+            # So per-class query = pool_size * query_ratio * probs[c] / num_classes
+            # gives the right total: sum over classes ≈ total_pool * query_ratio.
+            n_query = max(1, int(len(pool) * self.query_ratio * probs[c]))
             n_query = min(n_query, len(pool))
 
             # Sort by uncertainty (descending) and pick top

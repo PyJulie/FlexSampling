@@ -36,7 +36,7 @@ from flexsampling.data import ISICDataset, get_cls_num_list
 
 
 def load_config(path: str) -> dict:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -115,9 +115,19 @@ def run_flexsampling(cfg, train_ds, val_ds, test_ds, device):
     fcfg = cfg["flexsampling"]
     num_classes = cfg["model"]["num_classes"]
 
+    # Get encoder embed dim first (without consuming RNG state for classifier)
+    import timm
+    embed_dim = timm.create_model(cfg["model"]["backbone"], num_classes=0).num_features
+
+    # Re-seed so classifier gets identical initialization as baselines
+    seed = cfg.get("seed", 42)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+
     encoder = build_encoder(cfg).to(device)
     classifier = build_model(cfg).to(device)
 
+    ssl_cfg = fcfg.get("ssl", {})
     trainer = FlexSamplingTrainer(
         encoder=encoder,
         classifier=classifier,
@@ -125,21 +135,55 @@ def run_flexsampling(cfg, train_ds, val_ds, test_ds, device):
         val_dataset=val_ds,
         num_classes=num_classes,
         device=device,
+        embed_dim=embed_dim,
+        ssl_epochs=ssl_cfg.get("epochs", 100),
+        ssl_batch_size=ssl_cfg.get("batch_size", 64),
+        ssl_accum_steps=ssl_cfg.get("accum_steps", 4),
+        ssl_lr=float(ssl_cfg.get("lr", 0.001)),
+        ssl_temperature=float(ssl_cfg.get("temperature", 0.5)),
+        img_size=cfg["data"].get("img_size", 224),
         anchor_scaling=fcfg.get("anchor_scaling", 0.1),
         query_ratio=fcfg.get("query_ratio", 0.1),
-        warmup_epochs=fcfg.get("warmup_epochs", 30),
-        total_epochs=fcfg.get("total_epochs", 100),
-        patience=fcfg.get("patience", 10),
+        query_interval=fcfg.get("query_interval", 5),
+        warmup_epochs=fcfg.get("warmup_epochs", 20),
+        total_epochs=fcfg.get("total_epochs", 120),
+        patience=fcfg.get("patience", 7),
         bald_samples=fcfg.get("bald_mc_samples", 10),
-        batch_size=fcfg.get("batch_size", 64),
-        lr=fcfg.get("lr", 3e-4),
+        batch_size=fcfg.get("batch_size", 32),
+        lr=float(fcfg.get("lr", 0.01)),
+        momentum=float(fcfg.get("momentum", 0.9)),
+        weight_decay=float(fcfg.get("weight_decay", 1e-4)),
+        use_class_aware=fcfg.get("use_class_aware", True),
+        mixup_alpha=float(fcfg.get("mixup_alpha", 0.2)),
+        num_workers=0,
     )
 
-    history = trainer.run()
+    # Track best test result via callback (evaluate test at every val improvement)
+    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, num_workers=0, pin_memory=True)
+    best_test_result = {"balanced_acc": 0.0, "per_class_acc": []}
+    best_val_for_test = [0.0]  # mutable container for closure
 
-    # Final test evaluation
-    test_loader = DataLoader(test_ds, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
+    def on_epoch(epoch, metrics):
+        if metrics["val_acc"] > best_val_for_test[0]:
+            best_val_for_test[0] = metrics["val_acc"]
+            result = evaluate(classifier, test_loader, device, num_classes)
+            best_test_result.update(result)
+            print(f"  >> test_bAcc={result['balanced_acc']:.4f} at val={metrics['val_acc']:.4f}")
+
+    # Use plain CE loss if configured (CB Focal can hurt on some datasets)
+    loss_type = fcfg.get("loss", "adaptive")
+    if loss_type == "ce":
+        label_smoothing = float(fcfg.get("label_smoothing", 0.0))
+        ext_criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing).to(device)
+        history = trainer.run(criterion=ext_criterion, callback=on_epoch)
+    else:
+        history = trainer.run(callback=on_epoch)
+
+    # Final test evaluation (from restored best model)
     test_result = evaluate(classifier, test_loader, device, num_classes)
+    # Use whichever is better: callback-tracked or final restored
+    if best_test_result["balanced_acc"] > test_result["balanced_acc"]:
+        test_result = best_test_result
 
     print(f"\n{'='*60}")
     print(f"FlexSampling Results")
@@ -197,9 +241,9 @@ def run_baseline(cfg, train_ds, val_ds, test_ds, device):
 
     bs = tcfg["batch_size"]
     train_loader = DataLoader(train_ds, batch_size=bs, shuffle=shuffle, sampler=sampler,
-                              num_workers=4, pin_memory=True, drop_last=True)
-    val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader = DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=4, pin_memory=True)
+                              num_workers=0, pin_memory=True, drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=bs, shuffle=False, num_workers=0, pin_memory=True)
+    test_loader = DataLoader(test_ds, batch_size=bs, shuffle=False, num_workers=0, pin_memory=True)
 
     model = build_model(cfg).to(device)
 

@@ -1,0 +1,41 @@
+# CONTROL experiment: FlexSampling pipeline with all data (no curriculum)
+data:
+  root: ./dataset/8-class
+  image_dir:
+    - F:/research/projects/UniSSL/datasets/isic2019/ISIC_2019_Training_Input
+    - F:/research/projects/UniSSL/datasets/isic2019/ISIC_2019_Test_Input
+  train_split: train_100
+  val_split: val_100
+  test_split: test_100
+  img_size: 224
+
+model:
+  backbone: resnet50
+  pretrained: true
+  num_classes: 8
+
+flexsampling:
+  ssl:
+    epochs: 0
+    batch_size: 64
+    accum_steps: 4
+    lr: 0.001
+    temperature: 0.5
+  anchor_scaling: 1.0         # use ALL data as anchor
+  warmup_epochs: 999          # disable curriculum
+  total_epochs: 50
+  patience: 999
+  query_ratio: 0.5
+  query_interval: 0           # disable scheduled queries
+  bald_mc_samples: 10
+  batch_size: 32
+  lr: 0.01
+  momentum: 0.9
+  weight_decay: 0.0001
+  use_class_aware: true
+  mixup_alpha: 0.0
+  loss: ce
+  label_smoothing: 0.0
+
+seed: 42
+output_dir: ./results/isic_8class_r100_tuned

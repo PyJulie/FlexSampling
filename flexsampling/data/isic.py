@@ -51,7 +51,7 @@ class ISICDataset(Dataset):
 
     Args:
         root: Path to the split directory containing .npy files.
-        image_dir: Path to the directory containing actual image files.
+        image_dir: Path or list of paths to directories containing image files.
         split: Split name, used as the .npy filename stem (e.g. 'train', 'train_100').
         transform: Torchvision transform. If None, uses default.
         img_size: Image size for default transforms.
@@ -60,12 +60,15 @@ class ISICDataset(Dataset):
     def __init__(
         self,
         root: str,
-        image_dir: str,
+        image_dir,
         split: str = "train",
         transform: Optional[Callable] = None,
         img_size: int = 224,
     ):
-        self.image_dir = image_dir
+        if isinstance(image_dir, (list, tuple)):
+            self.image_dirs = list(image_dir)
+        else:
+            self.image_dirs = [image_dir]
         label_dict = np.load(os.path.join(root, "dic.npy"), allow_pickle=True).item()
         filenames = np.load(os.path.join(root, f"{split}.npy"), allow_pickle=True)
 
@@ -89,19 +92,18 @@ class ISICDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
+    def _find_image(self, fname: str) -> str:
+        for d in self.image_dirs:
+            for ext in ("", ".jpg", ".jpeg", ".png"):
+                path = os.path.join(d, fname + ext)
+                if os.path.exists(path):
+                    return path
+        return os.path.join(self.image_dirs[0], fname)
+
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, int]:
         fname, label = self.samples[index]
-        # Try common extensions
-        img = None
-        for ext in ("", ".jpg", ".jpeg", ".png"):
-            path = os.path.join(self.image_dir, fname + ext)
-            if os.path.exists(path):
-                img = Image.open(path).convert("RGB")
-                break
-        if img is None:
-            path = os.path.join(self.image_dir, fname)
-            img = Image.open(path).convert("RGB")
-
+        path = self._find_image(fname)
+        img = Image.open(path).convert("RGB")
         img = self.transform(img)
         return img, label
 

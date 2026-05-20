@@ -20,7 +20,7 @@ flexsampling:
   patience: 10               # epochs without val improvement before querying
   query_ratio: 0.1           # fraction of remaining pool to query each step
   bald_mc_samples: 10        # MC dropout forward passes for uncertainty
-  lr: 3e-4
+  lr: 0.0003
 
 # Alternative: use baseline methods instead of FlexSampling pipeline
 baseline:
