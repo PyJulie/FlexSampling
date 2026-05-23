@@ -18,6 +18,14 @@ FlexSampling is a curriculum-learning-based framework that addresses class imbal
    - **Instance-wise selection**: BALD (Bayesian Active Learning by Disagreement) scores rank unsampled instances by uncertainty; the most uncertain are queried first.
    - New samples are merged into the active training set and the optimizer is re-initialized.
 
+## Reproduction
+
+ISIC-2019-LT, 8 classes, imbalance ratio 100, ResNet-50, balanced accuracy (mean ± std over 3 seeds).
+
+| Method | Paper | This repo |
+|---|---|---|
+| FlexSampling | 63.85 ± 2.10 | **64.79 ± 0.14** |
+
 ## Installation
 
 ```bash

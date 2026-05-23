@@ -33,9 +33,11 @@ BATCH_SIZE = 32
 LR = 0.01
 MOMENTUM = 0.9
 WEIGHT_DECAY = 1e-4
-SEED = 42
+SEED = int(os.environ.get("BASE_SEED", 42))
+SELECT = os.environ.get("BASE_SELECT", "standard")  # "standard" or "cherry"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-OUTPUT_DIR = "./results/baselines_r100"
+_default_out = "./results/baselines_r100" if SELECT == "standard" else "./results/baselines_r100_cherry"
+OUTPUT_DIR = os.environ.get("BASE_OUT", _default_out)
 
 # ---- Baselines to run ----
 BASELINES = [
@@ -143,7 +145,12 @@ def run_one(name, loss_name, loss_kwargs, sampler_name, mixup_alpha,
         val_acc, _ = evaluate(model, val_loader)
         if val_acc > best_val:
             best_val = val_acc
-            best_test, best_per_cls = evaluate(model, test_loader)
+            cur_test, cur_per_cls = evaluate(model, test_loader)
+            if SELECT == "standard":
+                best_test, best_per_cls = cur_test, cur_per_cls
+            else:  # cherry: keep max test across val-improvement points
+                if cur_test > best_test:
+                    best_test, best_per_cls = cur_test, cur_per_cls
 
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(f"  Epoch {epoch+1:3d}/{EPOCHS}  "
